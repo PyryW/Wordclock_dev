@@ -2,7 +2,6 @@
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
 #include <FastLED.h>
-#include <array>
 
 #define NUM_LEDS  140
 #define LED_PIN   4
@@ -123,7 +122,7 @@ void setup()
 
   Serial.begin(115200);
   delay(250);
-  Serial.println("Wordclock v0.3");
+  Serial.println("Wordclock v0.4");
   Serial.print("Connecting to ");
   Serial.println(ssid);
   WiFi.begin(ssid, pass);
@@ -150,6 +149,15 @@ void setup()
 
 }
 
+int tstminute() {
+  static int min = 0;
+  min++;
+  if (min > 60) {
+    min = 0;
+  }
+  return min;
+}
+
 
 int round5(int in) {               //00  01  02 03 04
   const signed char round5delta[5] = {0, -1, -2, 2, 1};  // difference to the "rounded to nearest 5" value
@@ -167,53 +175,38 @@ void colorCycle() {
 
   if (dirUp) {
     currentHue++;
+    if (currentHue == 32) {
+      dirUp = false;
+    }
   } else {
     currentHue--;
-  }
-
-  if (dirUp && currentHue == 32) {
-    dirUp = false;
-  } else if (!dirUp && currentHue == 192) {
-    dirUp = true;
+    if (currentHue == 192) {
+      dirUp = true;
+    }
   }
 }
 
 
 void fade() {
-  static uint8_t fadeHi = 255;  //Starting value of fade high to low
-  static uint8_t fadeLo = 0;    //Starting value of fade low to hight
+  static uint8_t fade = 0;
 
-
-  //Fadedown, high to low
-  if (fadeHi != 0) {
-    fadeHi--;
-    for (int i = 0; i < NUM_LEDS; i++) {
-      if (!activeLEDs[i] && tmpLEDs[i]) { //If currently off, previously on
-        leds[i] = CHSV(currentHue, 255, fadeHi);
-      }
-    } 
-  } else {
-    fadeHi = 255;  //If fadeHi reaches 00, then the fadedown is complete, and fadeHi can be returned to 255 for the next fade.
-  }
-
-  //Fadeup, low to high
-  if (fadeLo != 255) {
-    fadeLo++;
+  if (fade != 255) {
+    fade++;
     for (int i = 0; i < NUM_LEDS; i++) {
       if (activeLEDs[i] && !tmpLEDs[i]) { //if currently on, previously off
-        leds[i] = CHSV(currentHue, 255, fadeLo);
+        leds[i] = CHSV(currentHue, 255, fade);
+      }
+      if (!activeLEDs[i] && tmpLEDs[i]) { //If currently off, previously on
+        leds[i] = CHSV(currentHue, 255, abs(fade-255));
       }
     }
-  } else {
-    fadeLo = 0;  //If fadeLo reaches 255, then the fadeup is complete, and fadeLo can be returned to 0 for the next fade.
+  } else { 
+    fade = 0;
+    fadePending = false;
   }
 
-  //If both the fadeup and fadedown have completed, then set fade pending to false to stop calling fade()
-  if (fadeHi == 255 && fadeLo == 0) {  
-    fadePending = false;
-    Serial.println("Fade now false");
-  }
 }
+
 
 void loop() {
   static unsigned long lastUpdate = 0;
@@ -227,15 +220,25 @@ void loop() {
       if (minute() != prevDisplay) {  //Refresh time only if the minute has changed
         prevDisplay = minute();
         refreshTime();
+      /* debug mode, remember to change in refreshTime too
+      if (second() != prevDisplay) { 
+        prevDisplay = second();
+        if (prevDisplay%2==0 && !fadePending) {
+          refreshTime();
+        }
+      */
       }
     }
 
-    if (fadePending) { fade(); }
 
     if (now > lastEffectUpdate + colorCycleSpeed && effectMode == 1) {
        colorCycle(); 
        lastEffectUpdate = now;
-       }
+    }
+
+    if (fadePending) { fade(); }
+
+    FastLED.show();
 
     lastUpdate = now;
   }
@@ -286,7 +289,8 @@ const int hourPos[][2] = {
   {90, 97},     //9
   {62, 69},     //10
   {129, 138},   //11
-  {70, 80}      //12
+  {70, 80},     //12
+  {135, 138}    //1 again, because of the +1 logic later 
 };
 
 
@@ -301,7 +305,7 @@ void refreshTime() {
   tmpLEDs = activeLEDs;
   activeLEDs.fill(false);
   uint8_t nowHour = hourFormat12();
-  uint8_t roundMinute = round5(minute());
+  uint8_t roundMinute = round5(minute()); //change to tstminute for debug mode
 
   if(showTimeIs) {
     show(words[0]);  //Kello
@@ -310,29 +314,25 @@ void refreshTime() {
 
   int helperMinute = abs( (roundMinute - 30)/5 ); //E.g. roundedMinute = 20, helperMinute = |(20-30)/5| = |-2| = 2, minutePos[2] = Kahtakymmentä
 
-  if (roundMinute%60 == 0) {      //hh:00 
-    show(words[4]);               //Tasan
-    if (roundMinute == 60) {      //hh:58 or hh:59
-      show(hourPos[nowHour+1]);   //Current hour+1, because 5:58 = 6:00
-    } else {                      //hh:00, hh:01, or hh:02
-      show(hourPos[nowHour]);     //Current hour
-    }
-  } else {
-    if(helperMinute != 1) {       //helperMinute 1 = 25 minutes, which is a special case due to being split on two lines
+  if (roundMinute%60 == 0) {       //*** hh:00..02 = 0,  hh:58..59 = 60  
+    show(words[4]);                   //Tasan     
+    show(hourPos[nowHour+(roundMinute/60)]); // 0/0 = 0, 60/60 = 1, because 6:58 -> 7:00, not 6:00
+  } else {                         //*** hh:03..57
+    if(helperMinute != 1) {          //if not helperMinute 1 = 25 minutes, which is a special case due to being split on two lines
       show(minutePos[helperMinute]);  
     } else {
-      show(minutePos[2]);         //Kahtakymmentä
-      show(minutePos[5]);         //Viittä
+      show(minutePos[2]);             //Kahtakymmentä
+      show(minutePos[5]);             //Viittä
     } 
 
-    if (roundMinute < 30) {
-      show(words[5]);             //Yli
-      show(hourPos[nowHour]);
-    } else if (roundMinute >= 30) {
-      if (helperMinute != 0) {
-        show(words[3]);           //Vaille
+    if (roundMinute < 30) {         //*** hh:03..27
+      show(words[5]);                 //Yli
+      show(hourPos[nowHour]);         //Current hour
+    } else if (roundMinute >= 30) { //*** hh:28..57
+      if (helperMinute != 0) {        //*** not hh:28..32
+        show(words[3]);                 //Vaille
       }
-      show(hourPos[nowHour+1]);   //Current hour+1, because 5:45 = quarter to six, not quarter to five
+      show(hourPos[nowHour+1]);       //Current hour+1, because 5:45 = quarter to six, not quarter to five
     }
   } 
 
