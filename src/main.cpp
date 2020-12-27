@@ -9,9 +9,9 @@
 CRGB leds[NUM_LEDS];
 #define BRIGHTNESS 128
 
-int cycleHue = 32;
+uint8_t currentHue = 32;
 
-int mainClock = 10;
+int mainClock = 20;     //Delay between updates, 20ms = 50fps
 
 bool fadePending = false;
 
@@ -31,7 +31,7 @@ bool showTimeIs = true;             // Show "Kello on"
 int effectMode = 1;                 // 1 = Colorcycle
 int colorCycleSpeed = 100;          // Milliseconds between hue increments
 
-int fadeSpeed = 100;                 // Fade on/off milliseconds
+int fadeSpeed = 100;                // Fade on/off milliseconds
 
 /*---------------------------*/
 #pragma endregion
@@ -123,6 +123,7 @@ void setup()
 
   Serial.begin(115200);
   delay(250);
+  Serial.println("Wordclock v0.3");
   Serial.print("Connecting to ");
   Serial.println(ssid);
   WiFi.begin(ssid, pass);
@@ -149,172 +150,92 @@ void setup()
 
 }
 
-time_t prevDisplay = 0; // when the digital clock was displayed
 
-int currentMinute;
-int roundMinute;
-int nowHour;
-
-
-int round5(int in) {
+int round5(int in) {               //00  01  02 03 04
   const signed char round5delta[5] = {0, -1, -2, 2, 1};  // difference to the "rounded to nearest 5" value
-  int rounded = in + round5delta[in%5];
+  int rounded = in + round5delta[in%5];     //hh:38%5 = 3 -> 38 + 2 = 40    
   return rounded;
 }
-/*
-void fade() {
-  static unsigned long lastUpdate = 0;
-  static uint8_t fadeHi = 255;
-  static uint8_t fadeLo = 0;
 
-  unsigned long now = millis();
-
-    //Read arrays of now active LEDs, and compare to previously active LEDs
-  if (now > lastUpdate + fadeSpeed) {
-
-    if (fadeHi != 0) {
-      fadeHi--;
-      for (int i = 0; i < NUM_LEDS; i++) {
-        if (!activeLEDs[i] && tmpLEDs[i]) { //If currently off, previously on
-          leds[i] = CHSV(cycleHue, 255, fadeHi);
-          Serial.println("turning led off");
-        }
-      } 
-      Serial.print("Decreased val by one, now ");
-      Serial.println(fadeHi);
-      } else {
-        fadeHi = 255;
-    }
-
-    if (fadeLo != 255) {
-      fadeHi++;
-      for (int i = 0; i < NUM_LEDS; i++) {
-        if (activeLEDs[i] && !tmpLEDs[i]) { //if currently on, previously off
-          leds[i] = CHSV(cycleHue, 255, fadeLo);
-          Serial.println("turning led on");
-        }
-      }
-    Serial.print("Increased val by one, now ");
-    Serial.println(fadeLo);
-    } else {
-      fadeHi = 0;
-    }
-    FastLED.show();
-    lastUpdate = now;
-  }
-
-  if (fadeHi == 255 && fadeLo == 0) {
-    fadePending = false;
-  }
-
-
-}
-*/
 
 void colorCycle() {
-  static unsigned long lastUpdate = 0;
   static bool dirUp = true;
-  static uint8_t fadeHi = 255;
-  static uint8_t fadeLo = 0;
+  static unsigned long lastUpdate = 0;
 
   unsigned long now = millis();
 
-  if (now > lastUpdate + mainClock) {
-    if (now > lastUpdate + colorCycleSpeed) {
-      for (int i = 0; i < NUM_LEDS; i++) {
-      if (activeLEDs[i]) {
-        leds[i] = CHSV(cycleHue, 255, 255);
-        }
-      }
-      lastUpdate = now;
-
-      if (dirUp && cycleHue == 32) {
-        dirUp = false;
-        cycleHue--;
-      } else if (!dirUp && cycleHue == 192) {
-        dirUp = true;
-        cycleHue++;
-      }
-
-      // TODO: Use uint for automatic overflow
-
-      
-      if (dirUp) {
-        cycleHue++;
-        //Serial.print("Increased hue by one, now ");
-        //Serial.println(cycleHue);
-      } else {
-        cycleHue--;
-        //Serial.print("Decreased hue by one, now ");
-        //Serial.println(cycleHue);
-      }
-
-      if (cycleHue == 0) {
-        cycleHue = 255;
-      } else if (cycleHue == 255) {
-        cycleHue = 0;
-      }
-    }
-
-    //Fadefunction
-    //**************
-    if (fadePending && activeLEDs != tmpLEDs) {
-
-      if (fadeHi != 0) {
-        fadeHi--;
-        for (int i = 0; i < NUM_LEDS; i++) {
-          if (!activeLEDs[i] && tmpLEDs[i]) { //If currently off, previously on
-            leds[i] = CHSV(cycleHue, 255, fadeHi);
-          }
-        } 
-      } else {
-        fadeHi = 255;
-      }
-
-      if (fadeLo != 255) {
-        fadeLo++;
-        for (int i = 0; i < NUM_LEDS; i++) {
-          if (activeLEDs[i] && !tmpLEDs[i]) { //if currently on, previously off
-            leds[i] = CHSV(cycleHue, 255, fadeLo);
-          }
-        }
-      } else {
-        fadeLo = 0;
-      }
-
-      if (fadeHi == 255 && fadeLo == 0) {
-        fadePending = false;
-        Serial.println("Fade now false");
-      }
-
-    }
-    //endfadefunction
-    //****************
-
-    FastLED.show();
+  for (int i = 0; i < NUM_LEDS; i++) {
+    if (activeLEDs[i]) { leds[i] = CHSV(currentHue, 255, 255); }
   }
 
+  if (dirUp) {
+    currentHue++;
+  } else {
+    currentHue--;
+  }
+
+  if (dirUp && currentHue == 32) {
+    dirUp = false;
+  } else if (!dirUp && currentHue == 192) {
+    dirUp = true;
+  }
 }
-  
+
+
+void fade() {
+  static uint8_t fadeHi = 255;  //Starting value of fade high to low
+  static uint8_t fadeLo = 0;    //Starting value of fade low to hight
+
+
+  //Fadedown, high to low
+  if (fadeHi != 0) {
+    fadeHi--;
+    for (int i = 0; i < NUM_LEDS; i++) {
+      if (!activeLEDs[i] && tmpLEDs[i]) { //If currently off, previously on
+        leds[i] = CHSV(currentHue, 255, fadeHi);
+      }
+    } 
+  } else {
+    fadeHi = 255;  //If fadeHi reaches 00, then the fadedown is complete, and fadeHi can be returned to 255 for the next fade.
+  }
+
+  //Fadeup, low to high
+  if (fadeLo != 255) {
+    fadeLo++;
+    for (int i = 0; i < NUM_LEDS; i++) {
+      if (activeLEDs[i] && !tmpLEDs[i]) { //if currently on, previously off
+        leds[i] = CHSV(currentHue, 255, fadeLo);
+      }
+    }
+  } else {
+    fadeLo = 0;  //If fadeLo reaches 255, then the fadeup is complete, and fadeLo can be returned to 0 for the next fade.
+  }
+
+  //If both the fadeup and fadedown have completed, then set fade pending to false to stop calling fade()
+  if (fadeHi == 255 && fadeLo == 0) {  
+    fadePending = false;
+    Serial.println("Fade now false");
+  }
+}
 
 void loop() {
+  static unsigned long lastUpdate = 0;
+  unsigned long now = millis();
+  static time_t prevDisplay = 0;
 
-  if (timeStatus() != timeNotSet) {
-    if (now() != prevDisplay) { //update the display only if time has changed
-      prevDisplay = now();
-      
-      nowHour = hourFormat12();
-      roundMinute = round5(minute());
-
-      if (currentMinute != minute()) {
-        currentMinute = minute();
+  if (now > lastUpdate + mainClock) {
+    if (timeStatus() != timeNotSet) {
+      if (minute() != prevDisplay) {  //Refresh time only if the minute has changed
+        prevDisplay = minute();
         refreshTime();
       }
     }
-  }
 
-  if (effectMode == 1) {
-    colorCycle();
+    if (now > lastUpdate + colorCycleSpeed && effectMode == 1) { colorCycle(); }
+    if (fadePending) { fade(); }
+
+    lastUpdate = now;
+    FastLED.show();
   }
 }
 
@@ -332,8 +253,6 @@ void loop() {
 126- Y K S I T O I S T A - - -  YKSI(127-130)TOISTA(131-136)
 */
 
-String sanat = "KELLO-ON-PUOLIKAHTAKYMMENTA-VARTTIA-VIITTAVAILLETASANYLINELJA-KYMMENEN---KAKSITOISTAVIISI-YHDEKSANSEITSEMANKOLMEKUUSIKAHDEKSAN-YKSITOISTA---";
-
 const int words[][2] = {
   {0, 4},       //Kello
   {6, 7},       //On
@@ -344,16 +263,16 @@ const int words[][2] = {
 };
 
 const int minutePos[][2] = {
-  {9, 13},  //Puoli
-  {0, 0},   //Placeholder
-  {15, 27}, //Kahtakymmentä
-  {28, 34}, //Varttia
-  {15, 22}, //Kymmentä
-  {36, 41}  //Viittä
+  {9, 13},      //Puoli
+  {0, 0},       //Placeholder
+  {15, 27},     //Kahtakymmentä
+  {28, 34},     //Varttia
+  {15, 22},     //Kymmentä
+  {36, 41}      //Viittä
 };
 
 const int hourPos[][2] = {
-  {0, 0},       //Placeholder
+  {0, 0},       //Placeholder, there is no hour 0 in 12-hour clock
   {135, 138},   //1
   {76, 80},     //2
   {98, 102},    //3
@@ -379,58 +298,43 @@ void show(const int word[]) {
 void refreshTime() {
   tmpLEDs = activeLEDs;
   activeLEDs.fill(false);
+  uint8_t nowHour = hourFormat12();
+  uint8_t roundMinute = round5(minute());
 
   if(showTimeIs) {
     show(words[0]);  //Kello
     show(words[1]);  //On
   }
 
-  int helperMinute = (roundMinute - 30)/5;
+  int helperMinute = abs( (roundMinute - 30)/5 ); //E.g. roundedMinute = 20, helperMinute = |(20-30)/5| = |-2| = 2, minutePos[2] = Kahtakymmentä
 
-  if (roundMinute == 0) {
-    show(words[4]); //Tasan
-    show(hourPos[nowHour]);
-  } else if (roundMinute == 60) {
-    show(words[4]); //Tasan
-    show(hourPos[nowHour+1]);  //Current hour+1, because 5:45 = quarter to six, not quarter to five
+  if (roundMinute%60 == 0) {      //hh:00 
+    show(words[4]);               //Tasan
+    if (roundMinute == 60) {      //hh:58 or hh:59
+      show(hourPos[nowHour+1]);   //Current hour+1, because 5:58 = 6:00
+    } else {                      //hh:00, hh:01, or hh:02
+      show(hourPos[nowHour]);     //Current hour
+    }
   } else {
-
-    if(abs(helperMinute) != 1) {
-      show(minutePos[abs(helperMinute)]); 
-      //show(minutePos[abs(helperMinute)]); 
-      //The absolute value of the rounded divided minute
-      //E.g. roundedMinute = 20, helperMinute = |(20-30)/5| = |-2| = 2, minutePos[2] = Kahtakymmentä
+    if(helperMinute != 1) {       //helperMinute 1 = 25 minutes, which is a special case due to being split on two lines
+      show(minutePos[helperMinute]);  
     } else {
-      show(minutePos[2]);
-      show(minutePos[5]);
+      show(minutePos[2]);         //Kahtakymmentä
+      show(minutePos[5]);         //Viittä
     } 
 
     if (roundMinute < 30) {
-      show(words[5]);           //Yli
+      show(words[5]);             //Yli
       show(hourPos[nowHour]);
     } else if (roundMinute >= 30) {
-      show(words[3]);           //Vaille
-      show(hourPos[nowHour+1]);
+      if (helperMinute != 0) {
+        show(words[3]);           //Vaille
+      }
+      show(hourPos[nowHour+1]);   //Current hour+1, because 5:45 = quarter to six, not quarter to five
     }
-
   } 
-  /*
-  //Read arrays of now active LEDs, and compare to previously active LEDs
-  for (int i = 0; i < NUM_LEDS; i++) {
-    if (!activeLEDs[i] && tmpLEDs[i]) { //If currently off, previously on
-      leds[i] = CHSV(0, 0, 0);
-      //Todo: trigger dim function here
-    } 
-    else if (activeLEDs[i] && !tmpLEDs[i]) { //if currently on, previously off
-      leds[i] = CHSV(cycleHue, 255, 255);
-      //Todo: trigger dim function here
-    }
+
+  if (activeLEDs != tmpLEDs) {    //If words to be displayed has changed, activate the fade effect
+    fadePending = true;
   }
-  */
-
-  fadePending = true;
-  Serial.println("Fade now true");
-
-  FastLED.show();
-
 }
