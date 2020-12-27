@@ -31,7 +31,7 @@ bool showTimeIs = true;             // Show "Kello on"
 int effectMode = 1;                 // 1 = Colorcycle
 int colorCycleSpeed = 100;          // Milliseconds between hue increments
 
-int fadeSpeed = 100;                // Fade on/off milliseconds
+//int fadeSpeed = 100;                // Fade on/off milliseconds
 
 /*---------------------------*/
 #pragma endregion
@@ -159,10 +159,7 @@ int round5(int in) {               //00  01  02 03 04
 
 
 void colorCycle() {
-  static bool dirUp = true;
-  static unsigned long lastUpdate = 0;
-
-  unsigned long now = millis();
+  static bool dirUp = false;
 
   for (int i = 0; i < NUM_LEDS; i++) {
     if (activeLEDs[i]) { leds[i] = CHSV(currentHue, 255, 255); }
@@ -220,10 +217,12 @@ void fade() {
 
 void loop() {
   static unsigned long lastUpdate = 0;
+  static unsigned long lastEffectUpdate = 0;
   unsigned long now = millis();
   static time_t prevDisplay = 0;
 
   if (now > lastUpdate + mainClock) {
+    FastLED.show();
     if (timeStatus() != timeNotSet) {
       if (minute() != prevDisplay) {  //Refresh time only if the minute has changed
         prevDisplay = minute();
@@ -231,11 +230,14 @@ void loop() {
       }
     }
 
-    if (now > lastUpdate + colorCycleSpeed && effectMode == 1) { colorCycle(); }
     if (fadePending) { fade(); }
 
+    if (now > lastEffectUpdate + colorCycleSpeed && effectMode == 1) {
+       colorCycle(); 
+       lastEffectUpdate = now;
+       }
+
     lastUpdate = now;
-    FastLED.show();
   }
 }
 
